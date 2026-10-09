@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# projeto
+.DS_Store
+artifacts/
+cache/
+typechain-types/
+abi/enderecos.json
+experimentos/resultados/*.csv
