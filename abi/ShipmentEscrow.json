@@ -1,0 +1,538 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "enderecoAssetTwin",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "enderecoOraculo",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "hashLeitura",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "timestampLeitura",
+        "type": "uint64"
+      }
+    ],
+    "name": "CheckpointRegistrado",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "inicio",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "fim",
+        "type": "uint64"
+      }
+    ],
+    "name": "JanelaLacreAutorizada",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "twinId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "valor",
+        "type": "uint256"
+      }
+    ],
+    "name": "ServicoAberto",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "transportador",
+        "type": "address"
+      }
+    ],
+    "name": "ServicoAceito",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "pagoTransportador",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "devolvidoContratante",
+        "type": "uint256"
+      }
+    ],
+    "name": "ServicoConcluido",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "valorDevolvido",
+        "type": "uint256"
+      }
+    ],
+    "name": "ServicoRescindido",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "segundos",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "penalidadeAcumulada",
+        "type": "uint256"
+      }
+    ],
+    "name": "TempoNaoObservado",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "segundosForaFaixa",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "penalidadeAcumulada",
+        "type": "uint256"
+      }
+    ],
+    "name": "ViolacaoAmbiental",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "momento",
+        "type": "uint64"
+      }
+    ],
+    "name": "ViolacaoLacre",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "twinId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "transportador",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "recebedor",
+        "type": "address"
+      },
+      {
+        "internalType": "int16",
+        "name": "tempMin",
+        "type": "int16"
+      },
+      {
+        "internalType": "int16",
+        "name": "tempMax",
+        "type": "int16"
+      },
+      {
+        "internalType": "uint32",
+        "name": "periodicidadeSeg",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "prazoEntrega",
+        "type": "uint64"
+      }
+    ],
+    "name": "abrirServico",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      }
+    ],
+    "name": "aceitarServico",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "assetTwin",
+    "outputs": [
+      {
+        "internalType": "contract AssetTwin",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint64",
+        "name": "inicio",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "fim",
+        "type": "uint64"
+      }
+    ],
+    "name": "autorizarJanelaLacre",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      }
+    ],
+    "name": "confirmarEntrega",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "multaBpsPorSegundo",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "valor",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "segundos",
+        "type": "uint256"
+      }
+    ],
+    "name": "multaDe",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "oraculo",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "hashLeitura",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "int16",
+        "name": "temperatura",
+        "type": "int16"
+      },
+      {
+        "internalType": "uint8",
+        "name": "umidade",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bool",
+        "name": "lacreAberto",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint64",
+        "name": "timestampLeitura",
+        "type": "uint64"
+      }
+    ],
+    "name": "registrarCheckpoint",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ultimoServicoId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "servicoId",
+        "type": "uint256"
+      }
+    ],
+    "name": "verServico",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "twinId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "valor",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "contratante",
+            "type": "address"
+          },
+          {
+            "internalType": "enum ShipmentEscrow.Estado",
+            "name": "estado",
+            "type": "uint8"
+          },
+          {
+            "internalType": "int16",
+            "name": "tempMin",
+            "type": "int16"
+          },
+          {
+            "internalType": "int16",
+            "name": "tempMax",
+            "type": "int16"
+          },
+          {
+            "internalType": "uint32",
+            "name": "periodicidadeSeg",
+            "type": "uint32"
+          },
+          {
+            "internalType": "address",
+            "name": "transportador",
+            "type": "address"
+          },
+          {
+            "internalType": "uint64",
+            "name": "prazoEntrega",
+            "type": "uint64"
+          },
+          {
+            "internalType": "address",
+            "name": "recebedor",
+            "type": "address"
+          },
+          {
+            "internalType": "uint64",
+            "name": "ultimoCheckpoint",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "segundosForaFaixa",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "inicioForaFaixa",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "segundosNaoObservados",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "janelaLacreInicio",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "janelaLacreFim",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct ShipmentEscrow.Servico",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
