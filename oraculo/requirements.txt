@@ -1,0 +1,4 @@
+web3==8.0.0
+eth-account==0.14.0
+eth-abi==6.0.0
+pytest==9.1.1
