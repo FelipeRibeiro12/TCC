@@ -173,7 +173,7 @@ def _enviar(w3: Web3, papel: str, chamada, valor: int = 0) -> None:
     )
 
 
-def test_receber_leitura_valida_registra_checkpoint(w3, escrow, relogio):
+def _abrir_e_aceitar(w3: Web3, escrow: str, relogio: RelogioVirtual) -> int:
     contrato = w3.eth.contract(address=escrow, abi=carregar_abi())
     twin = w3.eth.contract(
         address=contrato.functions.assetTwin().call(), abi=carregar_abi("AssetTwin")
@@ -201,7 +201,11 @@ def test_receber_leitura_valida_registra_checkpoint(w3, escrow, relogio):
     if servico == 0:
         pytest.skip("contrato ainda é esqueleto: abrirServico não abre serviço")
     _enviar(w3, "transportador", contrato.functions.aceitarServico(servico))
+    return servico
 
+
+def test_receber_leitura_valida_registra_checkpoint(w3, escrow, relogio):
+    servico = _abrir_e_aceitar(w3, escrow, relogio)
     oraculo = Oraculo(
         w3,
         conta_oraculo=conta_do_papel("oraculo"),
@@ -248,3 +252,31 @@ def test_encerrar_servico_sem_leitura_aceita_nao_envia(w3, escrow, relogio):
     oraculo = _oraculo(w3, escrow, relogio, conta_do_papel("oraculo"))
     assert oraculo.encerrar(SERVICO) is None
     assert oraculo.transacoes == []
+
+
+def test_rescisao_por_lacre_para_os_checkpoints(w3, escrow, relogio):
+    servico = _abrir_e_aceitar(w3, escrow, relogio)
+    oraculo = Oraculo(
+        w3,
+        conta_oraculo=conta_do_papel("oraculo"),
+        endereco_escrow=escrow,
+        relogio=relogio,
+        dispositivos_por_servico={servico: conta_do_papel("dispositivo").address},
+    )
+    dispositivo = Dispositivo(
+        conta_do_papel("dispositivo"), servico, relogio, 10, BASE, semente=42
+    )
+    oraculo.receber(dispositivo.emitir())
+    relogio.avancar(10)
+    # Sem janela autorizada: a troca de lacre dispara o checkpoint que rescinde.
+    dispositivo.abrir_lacre(30)
+    violacao = oraculo.receber(dispositivo.emitir())
+
+    assert violacao.transacao.status == "ok"
+    assert violacao.servico_encerrado
+    enviadas = len(oraculo.transacoes)
+    for _ in range(10):
+        relogio.avancar(10)
+        assert oraculo.receber(dispositivo.emitir()).servico_encerrado
+    assert oraculo.encerrar(servico) is None
+    assert len(oraculo.transacoes) == enviadas

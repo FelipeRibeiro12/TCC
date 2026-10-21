@@ -28,6 +28,7 @@ from eth_account.signers.local import LocalAccount
 from eth_utils import to_checksum_address
 from web3 import Web3
 from web3.exceptions import ContractLogicError, Web3RPCError
+from web3.logs import DISCARD
 
 from oraculo.agregacao import Agregador, Checkpoint, Modo
 from oraculo.assinatura import LeituraAssinada, signatario
@@ -203,6 +204,9 @@ class ResultadoRecebimento:
     motivo: Motivo | None
     checkpoint: Checkpoint | None = None
     transacao: ResultadoTransacao | None = None
+    # O contrato já rescindiu ou concluiu: o runner pode sair do loop, porque
+    # nada mais desta leitura em diante vai para a cadeia.
+    servico_encerrado: bool = False
 
     @property
     def aceita(self) -> bool:
@@ -254,20 +258,30 @@ class Oraculo:
         self.chain_id = w3.eth.chain_id
         self.agregadores: dict[int, Agregador] = {}
         self.transacoes: list[ResultadoTransacao] = []
+        self.encerrados: set[int] = set()
 
     def receber(self, leitura_assinada: LeituraAssinada) -> ResultadoRecebimento:
         inicio_ns = time.perf_counter_ns()
+        # Valida mesmo com o serviço encerrado: a rejeição continua sendo dado
+        # de resultado e precisa chegar ao log.
         motivo = self.validador.validar(leitura_assinada)
+        servico_id = leitura_assinada.leitura.servico_id
+        if servico_id in self.encerrados:
+            # Depois da rescisão ou da conclusão todo checkpoint reverteria:
+            # gás jogado fora e linhas `revert` que o cenário 7 não mede.
+            return ResultadoRecebimento(motivo, servico_encerrado=True)
         if motivo is not None:
             return ResultadoRecebimento(motivo)
-        agregador = self._agregador(leitura_assinada.leitura.servico_id)
+        agregador = self._agregador(servico_id)
         checkpoint = agregador.adicionar(leitura_assinada)
         if checkpoint is None:
             return ResultadoRecebimento(None)
         transacao = self._enviar(
             "registrarCheckpoint", checkpoint.argumentos(), inicio_ns
         )
-        return ResultadoRecebimento(None, checkpoint, transacao)
+        return ResultadoRecebimento(
+            None, checkpoint, transacao, servico_id in self.encerrados
+        )
 
     def enviar_checkpoint(self, checkpoint: Checkpoint) -> ResultadoTransacao:
         return self._enviar(
@@ -278,7 +292,7 @@ class Oraculo:
     # ficou no lote depois do último checkpoint ainda precisa ir para a cadeia.
     def encerrar(self, servico_id: int) -> ResultadoTransacao | None:
         agregador = self.agregadores.get(servico_id)
-        if agregador is None:
+        if agregador is None or servico_id in self.encerrados:
             return None
         checkpoint = agregador.descarregar()
         if checkpoint is None:
@@ -317,9 +331,41 @@ class Oraculo:
         self.agregadores[servico_id] = agregador
         return agregador
 
+    def _terminou(self, recibo) -> bool:
+        # Só os nomes dos eventos, que estão na ABI: a regra de quando o
+        # contrato rescinde ou conclui é da divisão 1 e pode mudar.
+        eventos = self.escrow.events
+        return any(
+            evento().process_receipt(recibo, errors=DISCARD)
+            for evento in (eventos.ServicoRescindido, eventos.ServicoConcluido)
+        )
+
     def _enviar(self, funcao: str, argumentos: tuple, inicio_ns: int) -> ResultadoTransacao:
         instante = self.relogio.agora()
         sincronizar_no(self.w3, self.relogio)
+        tx_hash, recibo, erro = self._transmitir(funcao, argumentos)
+        latencia_ms = (time.perf_counter_ns() - inicio_ns) / 1e6
+
+        ok = recibo is not None and recibo["status"] == 1
+        if recibo is not None and not ok and not erro:
+            erro = "revert sem motivo"
+        # Toda função do escrow recebe o servicoId primeiro.
+        if ok and self._terminou(recibo):
+            self.encerrados.add(argumentos[0])
+        resultado = ResultadoTransacao(
+            funcao=funcao,
+            tx_hash=tx_hash,
+            gas_usado=recibo["gasUsed"] if recibo is not None else None,
+            bloco=recibo["blockNumber"] if recibo is not None else None,
+            status="ok" if ok else "revert",
+            erro=erro,
+            instante_injecao=instante,
+            latencia_ms=latencia_ms,
+        )
+        self.transacoes.append(resultado)
+        return resultado
+
+    def _transmitir(self, funcao: str, argumentos: tuple) -> tuple[str | None, dict | None, str]:
         tx_hash: str | None = None
         recibo = None
         erro = ""
@@ -347,20 +393,4 @@ class Oraculo:
             if isinstance(dados, dict) and dados.get("txHash"):
                 tx_hash = dados["txHash"]
                 recibo = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-        latencia_ms = (time.perf_counter_ns() - inicio_ns) / 1e6
-
-        ok = recibo is not None and recibo["status"] == 1
-        if recibo is not None and not ok and not erro:
-            erro = "revert sem motivo"
-        resultado = ResultadoTransacao(
-            funcao=funcao,
-            tx_hash=tx_hash,
-            gas_usado=recibo["gasUsed"] if recibo is not None else None,
-            bloco=recibo["blockNumber"] if recibo is not None else None,
-            status="ok" if ok else "revert",
-            erro=erro,
-            instante_injecao=instante,
-            latencia_ms=latencia_ms,
-        )
-        self.transacoes.append(resultado)
-        return resultado
+        return tx_hash, recibo, erro

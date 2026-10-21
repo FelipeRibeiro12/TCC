@@ -131,14 +131,20 @@ def rodar(cenario, repeticao: int, endereco_escrow: str) -> None:
             ...  # rejeitada; o motivo já foi para rejeicoes.csv
         elif resultado.transacao is not None:
             ...  # div. 3: linha em transacoes.csv (ver abaixo)
+        if resultado.servico_encerrado:
+            # O contrato rescindiu (lacre fora de janela) ou concluiu: o
+            # oráculo não envia mais nada, então não há o que medir adiante.
+            break
 
     # Manda o que ficou no lote depois do último checkpoint; sem isso, o fim
-    # da viagem não chega à cadeia. Devolve None se não havia nada pendente.
+    # da viagem não chega à cadeia. Devolve None se não havia nada pendente
+    # ou se o serviço já terminou em cadeia.
     final = oraculo.encerrar(servico_id)
     if final is not None:
         ...  # div. 3: linha em transacoes.csv, como as do loop
 
-    confirmar_entrega(servico_id)  # div. 3
+    if servico_id not in oraculo.encerrados:
+        confirmar_entrega(servico_id)  # div. 3; rescindido, reverteria
 
 
 for variante in cenario.variantes():  # cenários com "varrer" expandem aqui
@@ -157,6 +163,18 @@ for variante in cenario.variantes():  # cenários com "varrer" expandem aqui
 | `motivo` | `Motivo` da rejeição, ou `None` |
 | `checkpoint` | `Checkpoint` enviado, ou `None` se a leitura só entrou no lote |
 | `transacao` | `ResultadoTransacao` do envio, ou `None` |
+| `servico_encerrado` | `True` se o contrato já emitiu `ServicoRescindido` ou `ServicoConcluido` para o serviço |
+
+Depois que um recibo do oráculo traz `ServicoRescindido` ou
+`ServicoConcluido`, o serviço entra em `oraculo.encerrados` e nenhuma leitura
+dele vai mais para a cadeia: todo `registrarCheckpoint` reverteria, gastando
+gás e pondo em `transacoes.csv` linhas `revert` que não são as do cenário 7.
+A leitura continua passando pelo validador — rejeição depois do fim ainda vai
+para `rejeicoes.csv` —, mas volta sem checkpoint nem transação e com
+`servico_encerrado=True`. Recomendado: sair do loop do executor nesse ponto.
+`encerrar` também não envia nada para serviço encerrado. `enviar_checkpoint`,
+chamado direto pelo runner, não é bloqueado: fica livre para o cenário 7
+forçar um envio ilegal de propósito.
 
 `ResultadoTransacao` mapeia direto para uma linha de `transacoes.csv`:
 
