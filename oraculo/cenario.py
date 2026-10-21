@@ -383,6 +383,7 @@ def _checar_coerencia(cenario: Cenario, origem: str, limites: Limites = Limites(
             intervalos[i] = (evento.inicio, fim)
 
     _checar_sobreposicao(cenario, intervalos, erro)
+    _checar_reenvio(cenario, intervalos, erro)
 
     janelas = [i for i, e in enumerate(cenario.eventos) if e.janela is not None]
     # O Servico guarda uma janela só (janelaLacreInicio/Fim); uma segunda
@@ -434,6 +435,31 @@ def _checar_sobreposicao(cenario: Cenario, intervalos, erro) -> None:
         )
 
 
+def _checar_reenvio(cenario: Cenario, intervalos, erro) -> None:
+    # O dispositivo reenvia a última leitura legítima; se toda amostra anterior
+    # foi calada por silêncio ou tomada por outro malicioso, não há o que
+    # reenviar e o executor quebraria no meio da rodada.
+    p = cenario.periodo_amostra_seg
+    silencios = [intervalos[i] for i, e in enumerate(cenario.eventos) if e.tipo is Tipo.SILENCIO]
+    ocupadas = {
+        amostra
+        for i, e in enumerate(cenario.eventos)
+        if e.tipo in MALICIOSOS
+        for amostra in _amostras(*intervalos[i], p)
+    }
+    for i, evento in enumerate(cenario.eventos):
+        if evento.tipo is not Tipo.NONCE_REPETIDO:
+            continue
+        legitimas = [
+            amostra
+            for amostra in _amostras(0, intervalos[i][0], p)
+            if amostra not in ocupadas
+            and not any(inicio <= amostra < fim for inicio, fim in silencios)
+        ]
+        if not legitimas:
+            raise erro(f"eventos[{i}]", "nonce_repetido precisa de uma leitura legítima antes para reenviar")
+
+
 def _esperado(
     cenario: Cenario,
     evento: Evento,
@@ -482,8 +508,6 @@ def _esperado(
             raise erro("silêncio só pode ser conforme ou nao_observado")
         return None
 
-    if evento.tipo is Tipo.NONCE_REPETIDO and inicio == 0:
-        raise erro("nonce_repetido precisa de uma leitura legítima antes para reenviar")
     if evento.tipo is Tipo.VALOR_IMPOSSIVEL and evento.modo == "salto":
         # Com amostragem lenta a variação admitida cresce e engole o salto,
         # que passaria como leitura legítima.

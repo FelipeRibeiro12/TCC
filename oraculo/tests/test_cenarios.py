@@ -240,6 +240,10 @@ LACRE = {"inicio": 300, "tipo": "abrir_lacre", "duracao": 30, "esperado": "viola
 SILENCIO = {"inicio": 100, "tipo": "silencio", "duracao": 60, "esperado": "nao_observado"}
 NONCE = {"inicio": 200, "tipo": "nonce_repetido", "esperado": "rejeitado_oraculo", "motivo_esperado": "nonce_repetido"}
 
+# Calam ou tomam as amostras 0, 10 e 20 (período de 10 s do MINIMO).
+SILENCIO_INICIAL = {**SILENCIO, "inicio": 0, "duracao": 30, "esperado": "conforme"}
+INVALIDA_INICIAL = {"inicio": 0, "tipo": "assinatura_invalida", "esperado": "rejeitado_oraculo", "motivo_esperado": "assinatura_invalida"}
+
 
 def test_minimo_valida() -> None:
     assert de_dict(MINIMO).eventos == ()
@@ -278,6 +282,8 @@ def test_minimo_valida() -> None:
         (com_eventos({**SILENCIO, "esperado": "conforme"}), r"produz nao_observado, não conforme"),
         (com_eventos({**SILENCIO, "duracao": 20, "esperado": "desvio_temperatura"}), r"só pode ser conforme ou nao_observado"),
         (com_eventos({**NONCE, "inicio": 0}), r"precisa de uma leitura legítima antes"),
+        (com_eventos(SILENCIO_INICIAL, {**NONCE, "inicio": 30}), r"eventos\[1\]: nonce_repetido precisa de uma leitura legítima"),
+        (com_eventos({**INVALIDA_INICIAL, "quantidade": 3}, {**NONCE, "inicio": 30}), r"eventos\[1\]: nonce_repetido precisa de uma leitura legítima"),
         (com_eventos({**NONCE, "motivo_esperado": "assinatura_invalida"}), r"rejeita por nonce_repetido"),
         (com_eventos({**NONCE, "tipo": "valor_impossivel", "modo": "salto", "motivo_esperado": "valor_impossivel"}), r"rejeita por variacao_impossivel"),
         (com_eventos({**NONCE, "tipo": "valor_impossivel", "modo": "salto", "motivo_esperado": "variacao_impossivel"}, periodo_amostra_seg=150, servico={"tempMin": 20, "tempMax": 80, "periodicidadeSeg": 300}), r"cabe na variação admitida"),
@@ -321,6 +327,19 @@ def test_silencio_curto_aceita_os_dois_rotulos() -> None:
     for rotulo in ("conforme", "nao_observado"):
         de_dict(com_eventos({**SILENCIO, "duracao": 20, "esperado": rotulo}))
 
+
+
+@pytest.mark.parametrize(
+    "antes",
+    [{**SILENCIO_INICIAL, "duracao": 20}, {**INVALIDA_INICIAL, "quantidade": 2}],
+    ids=["silencio", "assinatura_invalida"],
+)
+def test_nonce_repetido_com_uma_leitura_legitima_antes_valida_e_executa(
+    antes: dict, contas: dict[str, LocalAccount], relogio: RelogioVirtual
+) -> None:
+    c = de_dict(com_eventos(antes, {**NONCE, "inicio": 30}))
+    reenvio = next(e for e in executar(c, contas, relogio) if e.eventos == (1,))
+    assert reenvio.leitura.leitura.timestamp < relogio.agora() - c.duracao_seg + 30
 
 # --- simulação seca -----------------------------------------------------------
 
