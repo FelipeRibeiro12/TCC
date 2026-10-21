@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -100,6 +101,24 @@ def test_checkpoint_do_oraculo_e_aceito(w3, escrow, relogio):
     # O bloco sai com o instante virtual, não com o relógio real.
     assert w3.eth.get_block(resultado.bloco)["timestamp"] == relogio.agora()
     assert oraculo.transacoes == [resultado]
+
+
+def test_latencia_nao_conta_o_alinhamento_do_relogio(w3, escrow, relogio, monkeypatch):
+    import oraculo.oraculo as modulo
+
+    original = modulo.sincronizar_no
+
+    def sincronizar_lento(w3, relogio):
+        time.sleep(0.05)
+        original(w3, relogio)
+
+    monkeypatch.setattr(modulo, "sincronizar_no", sincronizar_lento)
+    oraculo = _oraculo(w3, escrow, relogio, conta_do_papel("oraculo"))
+    resultado = oraculo.enviar_checkpoint(_checkpoint(relogio))
+
+    assert resultado.status == "ok"
+    # Com os 50 ms da sincronização na conta, nunca ficaria abaixo disso.
+    assert 0 < resultado.latencia_ms < 50
 
 
 @pytest.mark.parametrize("papel", ["dispositivo", "contratante"])

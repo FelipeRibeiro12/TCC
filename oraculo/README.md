@@ -184,7 +184,7 @@ forçar um envio ilegal de propósito.
 | `chamador` | sempre `oraculo` |
 | `gas_usado` | `gas_usado` |
 | `bloco` | `bloco` |
-| `latencia_ms` | `latencia_ms` — tempo real, da entrega da leitura ao recibo |
+| `latencia_ms` | `latencia_ms` — tempo real, da entrega da leitura ao recibo, sem o alinhamento do relógio do nó |
 | `status` | `status` (`ok` ou `revert`) |
 | `erro` | `erro` — só o texto do `require`, ex. `apenas oraculo` |
 | `timestamp_envio` | `instante_injecao` — relógio virtual |

@@ -196,7 +196,7 @@ class ResultadoTransacao:
     status: str  # "ok" ou "revert", o vocabulário do transacoes.csv
     erro: str
     instante_injecao: int  # relógio virtual
-    latencia_ms: float  # tempo real, da injeção até o recibo
+    latencia_ms: float  # tempo real, da injeção até o recibo, sem alinhar o nó
 
 
 @dataclass(frozen=True)
@@ -342,9 +342,14 @@ class Oraculo:
 
     def _enviar(self, funcao: str, argumentos: tuple, inicio_ns: int) -> ResultadoTransacao:
         instante = self.relogio.agora()
+        # O alinhamento do relógio do nó só existe porque o experimento usa
+        # tempo virtual; numa rede real não acontece, então sai da latência
+        # que vai para a tabela do artigo.
+        inicio_sincronia_ns = time.perf_counter_ns()
         sincronizar_no(self.w3, self.relogio)
+        sincronia_ns = time.perf_counter_ns() - inicio_sincronia_ns
         tx_hash, recibo, erro = self._transmitir(funcao, argumentos)
-        latencia_ms = (time.perf_counter_ns() - inicio_ns) / 1e6
+        latencia_ms = (time.perf_counter_ns() - inicio_ns - sincronia_ns) / 1e6
 
         ok = recibo is not None and recibo["status"] == 1
         if recibo is not None and not ok and not erro:
