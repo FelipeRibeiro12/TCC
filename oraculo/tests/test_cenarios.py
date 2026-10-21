@@ -1,18 +1,22 @@
 import copy
 import json
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
 from eth_account.signers.local import LocalAccount
 
-from oraculo.agregacao import Agregador, Modo
+from oraculo.agregacao import Agregador, Checkpoint, Disparo, Modo
+from oraculo.assinatura import LeituraAssinada
 from oraculo.cenario import (
     DIRETORIO_CENARIOS,
     Cenario,
     ErroCenario,
     Esperado,
     Janela,
+    Tipo,
     carregar,
+    carregar_todos,
     de_dict,
 )
 from oraculo.executor import Emissao, Executor
@@ -316,3 +320,129 @@ def test_lacre_sem_janela_e_lacre_longe_da_janela_sao_violacao() -> None:
 def test_silencio_curto_aceita_os_dois_rotulos() -> None:
     for rotulo in ("conforme", "nao_observado"):
         de_dict(com_eventos({**SILENCIO, "duracao": 20, "esperado": rotulo}))
+
+
+# --- simulação seca -----------------------------------------------------------
+
+# Roda cada roteiro pelo caminho do oráculo sem cadeia (Executor → Validador →
+# Agregador → descarregar) e confere, nos checkpoints, o que o rótulo promete.
+# A validação do cenario.py decide por regra; aqui decide a agregação real, que
+# é o que o contrato vai ver. Silêncio curto e leitura rejeitada no instante
+# do batimento só aparecem assim.
+SEMENTES = range(3)
+VARIANTES = [v for c in carregar_todos() for v in c.variantes()]
+
+
+def rotulo_variante(c: Cenario) -> str:
+    return c.nome + "".join(f"-{v}" for v in c.variante.values())
+
+
+def proxima_amostra(instante: int, periodo: int) -> int:
+    return -(-instante // periodo) * periodo
+
+
+@dataclass
+class Simulacao:
+    rejeitadas: list[tuple[tuple[int, ...], Motivo]]
+    checkpoints: list[Checkpoint]
+    t0: int
+
+    def instante(self, cp: Checkpoint) -> int:
+        return cp.timestamp_leitura - self.t0
+
+    def no_instante(self, segundo: int) -> Checkpoint | None:
+        return next((cp for cp in self.checkpoints if self.instante(cp) == segundo), None)
+
+
+# Bruto e agregado veem as mesmas leituras, e assinar e recuperar a assinatura
+# é quase todo o custo (ECDSA em Python puro); a validação roda uma vez por
+# roteiro, período e semente, e só a agregação se repete por modo.
+_validadas: dict[tuple[str, int], tuple[list, list[LeituraAssinada], int]] = {}
+
+
+def simular(c: Cenario, contas: dict[str, LocalAccount], semente: int) -> Simulacao:
+    # Chave pelo roteiro inteiro, não pelo nome: roteiros diferentes podem ter
+    # o mesmo nome (os montados nos testes de validação).
+    chave = (repr(replace(c, modo_agregacao=Modo.AGREGADO, variante={})), semente)
+    if chave not in _validadas:
+        relogio = RelogioVirtual()
+        executor = Executor(c, contas["dispositivo"], SERVICO, relogio, semente=semente)
+        validador = Validador({SERVICO: contas["dispositivo"].address}, relogio)
+        rejeitadas, aceitas = [], []
+        for e in executor:
+            motivo = validador.validar(e.leitura)
+            if motivo is not None:
+                rejeitadas.append((e.eventos, motivo))
+            else:
+                aceitas.append(e.leitura)
+        _validadas[chave] = (rejeitadas, aceitas, executor.t0)
+    rejeitadas, aceitas, t0 = _validadas[chave]
+    agregador = Agregador(
+        c.servico.temp_min, c.servico.temp_max, c.servico.periodicidade_seg, c.modo_agregacao
+    )
+    for leitura in aceitas:
+        agregador.adicionar(leitura)
+    agregador.descarregar()
+    return Simulacao(rejeitadas, agregador.checkpoints, t0)
+
+
+@pytest.mark.parametrize("semente", SEMENTES)
+@pytest.mark.parametrize("c", VARIANTES, ids=rotulo_variante)
+def test_simulacao_seca_produz_o_que_o_roteiro_rotula(
+    c: Cenario, semente: int, contas: dict[str, LocalAccount]
+) -> None:
+    sim = simular(c, contas, c.semente + semente)
+    p, servico = c.periodo_amostra_seg, c.servico
+    modo_bruto = c.modo_agregacao is Modo.BRUTO
+
+    assert sim.rejeitadas == [((i,), m) for i, m in c.rejeicoes_esperadas()]
+
+    # O 0 entra como ponto de partida: silêncio logo no início também é lacuna
+    # para o contrato, que conta desde o aceite.
+    instantes = [0] + [sim.instante(cp) for cp in sim.checkpoints]
+    estouros = [
+        (a, b) for a, b in zip(instantes, instantes[1:]) if b - a > servico.periodicidade_seg
+    ]
+    silencios = [
+        e for e in c.eventos if e.tipo is Tipo.SILENCIO and e.esperado is Esperado.NAO_OBSERVADO
+    ]
+    # Cada estouro precisa ter exatamente um silêncio rotulado dentro dele, e
+    # cada silêncio rotulado, exatamente um estouro em volta.
+    for a, b in estouros:
+        dentro = [s for s in silencios if a < s.inicio and s.inicio + s.duracao <= b]
+        assert len(dentro) == 1, f"lacuna ({a}, {b}] sem silêncio nao_observado que a explique"
+    for s in silencios:
+        em_volta = [(a, b) for a, b in estouros if a < s.inicio and s.inicio + s.duracao <= b]
+        assert len(em_volta) == 1, f"silêncio em {s.inicio} rotulado nao_observado sem lacuna"
+
+    for evento in c.eventos:
+        inicio = proxima_amostra(evento.inicio, p)
+        if evento.tipo is Tipo.EXCURSAO_TEMPERATURA:
+            fim = evento.inicio + evento.duracao
+            fora = [
+                cp
+                for cp in sim.checkpoints
+                if evento.inicio <= sim.instante(cp) < fim
+                and not servico.temp_min <= cp.temperatura <= servico.temp_max
+            ]
+            if evento.esperado is Esperado.CONFORME:
+                assert fora == [], f"excursão conforme em {evento.inicio} saiu da faixa"
+                continue
+            cp = sim.no_instante(inicio)
+            assert cp is not None and cp in fora, f"excursão em {evento.inicio} sem checkpoint fora da faixa em {inicio}"
+            assert cp.disparo is (Disparo.BRUTO if modo_bruto else Disparo.FAIXA)
+            # A volta à faixa também precisa chegar na hora, senão o contrato
+            # conta mais tempo fora do que o roteiro injetou.
+            volta = proxima_amostra(fim, p)
+            if volta < c.duracao_seg:
+                cp = sim.no_instante(volta)
+                assert cp is not None and servico.temp_min <= cp.temperatura <= servico.temp_max, (
+                    f"excursão em {evento.inicio} sem checkpoint de volta à faixa em {volta}"
+                )
+        elif evento.tipo is Tipo.ABRIR_LACRE:
+            cp = sim.no_instante(inicio)
+            assert cp is not None and cp.lacre_aberto, f"lacre em {evento.inicio} sem checkpoint em {inicio}"
+            assert cp.disparo is (Disparo.BRUTO if modo_bruto else Disparo.LACRE)
+
+    # O descarregar ancora até a última amostra da rodada.
+    assert sim.instante(sim.checkpoints[-1]) == proxima_amostra(c.duracao_seg, p) - p
