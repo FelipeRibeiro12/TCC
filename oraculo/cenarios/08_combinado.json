@@ -1,0 +1,12 @@
+{
+  "nome": "08_combinado",
+  "duracao_seg": 600,
+  "periodo_amostra_seg": 10,
+  "servico": { "tempMin": 20, "tempMax": 80, "periodicidadeSeg": 60 },
+  "base": { "temperatura": 50, "umidade": 60 },
+  "semente": 42,
+  "eventos": [
+    { "inicio": 120, "tipo": "excursao_temperatura", "duracao": 120, "temperatura": 120, "esperado": "desvio_temperatura" },
+    { "inicio": 400, "tipo": "abrir_lacre", "duracao": 30, "esperado": "violacao_lacre" }
+  ]
+}

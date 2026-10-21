@@ -1,0 +1,15 @@
+{
+  "nome": "06_volume_telemetria",
+  "duracao_seg": 600,
+  "periodo_amostra_seg": 10,
+  "servico": { "tempMin": 20, "tempMax": 80, "periodicidadeSeg": 60 },
+  "base": { "temperatura": 50, "umidade": 60 },
+  "semente": 42,
+  "varrer": {
+    "periodo_amostra_seg": [1, 2, 5, 10, 30],
+    "modo_agregacao": ["bruto", "agregado"]
+  },
+  "eventos": [
+    { "inicio": 240, "tipo": "excursao_temperatura", "duracao": 60, "temperatura": 120, "esperado": "desvio_temperatura" }
+  ]
+}

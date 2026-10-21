@@ -1,0 +1,14 @@
+{
+  "nome": "05_indisponibilidade_crescente",
+  "duracao_seg": 600,
+  "periodo_amostra_seg": 5,
+  "servico": { "tempMin": 20, "tempMax": 80, "periodicidadeSeg": 30 },
+  "base": { "temperatura": 50, "umidade": 60 },
+  "semente": 42,
+  "eventos": [
+    { "inicio": 30,  "tipo": "silencio", "duracao": 30,  "esperado": "nao_observado" },
+    { "inicio": 100, "tipo": "silencio", "duracao": 60,  "esperado": "nao_observado" },
+    { "inicio": 200, "tipo": "silencio", "duracao": 120, "esperado": "nao_observado" },
+    { "inicio": 350, "tipo": "silencio", "duracao": 240, "esperado": "nao_observado" }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "nome": "07_rejeicoes",
+  "duracao_seg": 600,
+  "periodo_amostra_seg": 10,
+  "servico": { "tempMin": 20, "tempMax": 80, "periodicidadeSeg": 60 },
+  "base": { "temperatura": 50, "umidade": 60 },
+  "semente": 42,
+  "eventos": [
+    { "inicio": 70,  "tipo": "assinatura_invalida", "modo": "outra_chave", "esperado": "rejeitado_oraculo", "motivo_esperado": "assinatura_invalida" },
+    { "inicio": 130, "tipo": "assinatura_invalida", "modo": "adulterada",  "esperado": "rejeitado_oraculo", "motivo_esperado": "assinatura_invalida" },
+    { "inicio": 190, "tipo": "nonce_repetido", "quantidade": 2,            "esperado": "rejeitado_oraculo", "motivo_esperado": "nonce_repetido" },
+    { "inicio": 270, "tipo": "valor_impossivel", "modo": "temperatura",    "esperado": "rejeitado_oraculo", "motivo_esperado": "valor_impossivel" },
+    { "inicio": 330, "tipo": "valor_impossivel", "modo": "umidade",        "esperado": "rejeitado_oraculo", "motivo_esperado": "valor_impossivel" },
+    { "inicio": 390, "tipo": "valor_impossivel", "modo": "salto",          "esperado": "rejeitado_oraculo", "motivo_esperado": "variacao_impossivel" }
+  ]
+}

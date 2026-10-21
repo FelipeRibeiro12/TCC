@@ -1,0 +1,11 @@
+{
+  "nome": "03_lacre_dentro_janela",
+  "duracao_seg": 600,
+  "periodo_amostra_seg": 10,
+  "servico": { "tempMin": 20, "tempMax": 80, "periodicidadeSeg": 60 },
+  "base": { "temperatura": 50, "umidade": 60 },
+  "semente": 42,
+  "eventos": [
+    { "inicio": 300, "tipo": "abrir_lacre", "duracao": 30, "janela": { "inicio": 280, "fim": 360 }, "esperado": "conforme" }
+  ]
+}

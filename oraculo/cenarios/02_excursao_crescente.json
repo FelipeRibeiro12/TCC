@@ -1,0 +1,14 @@
+{
+  "nome": "02_excursao_crescente",
+  "duracao_seg": 600,
+  "periodo_amostra_seg": 10,
+  "servico": { "tempMin": 20, "tempMax": 80, "periodicidadeSeg": 60 },
+  "base": { "temperatura": 50, "umidade": 60 },
+  "semente": 42,
+  "eventos": [
+    { "inicio": 20,  "tipo": "excursao_temperatura", "duracao": 30,  "temperatura": 120, "esperado": "desvio_temperatura" },
+    { "inicio": 80,  "tipo": "excursao_temperatura", "duracao": 60,  "temperatura": 120, "esperado": "desvio_temperatura" },
+    { "inicio": 170, "tipo": "excursao_temperatura", "duracao": 120, "temperatura": 120, "esperado": "desvio_temperatura" },
+    { "inicio": 320, "tipo": "excursao_temperatura", "duracao": 240, "temperatura": 120, "esperado": "desvio_temperatura" }
+  ]
+}
