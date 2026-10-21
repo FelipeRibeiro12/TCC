@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,7 +10,7 @@ from web3 import Web3
 from oraculo.agregacao import Agregador
 from oraculo.contas import conta_do_papel
 from oraculo.log_rejeicoes import LogRejeicoes
-from oraculo.oraculo import Motivo, Oraculo, _resumo_revert, carregar_abi
+from oraculo.oraculo import Motivo, Oraculo, Rejeicao, _resumo_revert, carregar_abi
 from oraculo.relogio import INICIO_PADRAO, RelogioVirtual
 from oraculo.simulador import Base, Dispositivo
 
@@ -141,6 +142,50 @@ def test_rejeicao_depois_do_encerramento_continua_no_log(
     linhas = oraculo_sem_no.validador.log.caminho.read_text().splitlines()
     assert len(linhas) == 2  # cabeçalho e a rejeição
     assert envios == ["registrarCheckpoint"]
+
+
+def test_rejeicao_fica_em_memoria_mesmo_sem_csv(relogio: RelogioVirtual) -> None:
+    oraculo = Oraculo(
+        _W3SemNo(),
+        conta_oraculo=conta_do_papel("oraculo"),
+        endereco_escrow="0x" + "11" * 20,
+        relogio=relogio,
+        dispositivos_por_servico={SERVICO: conta_do_papel("dispositivo").address},
+    )
+    dispositivo = Dispositivo(
+        conta_do_papel("dispositivo"), SERVICO, relogio, 10, BASE, semente=42
+    )
+    dispositivo.valor_impossivel("temperatura")
+    emitida = dispositivo.emitir()
+
+    resultado = oraculo.receber(emitida)
+
+    assert resultado.motivo is Motivo.VALOR_IMPOSSIVEL
+    assert oraculo.rejeicoes == [
+        Rejeicao(emitida.leitura, relogio.agora(), Motivo.VALOR_IMPOSSIVEL)
+    ]
+
+
+def test_latencia_nao_conta_a_leitura_do_sla(
+    oraculo_sem_no: Oraculo, relogio: RelogioVirtual, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _contar_envios(oraculo_sem_no, monkeypatch, RECIBO_OK, terminou=False)
+    del oraculo_sem_no.agregadores[SERVICO]
+
+    def ver_servico_lento(servico_id: int) -> dict:
+        time.sleep(0.05)
+        return {"tempMin": 20, "tempMax": 80, "periodicidadeSeg": 60, "estado": 2}
+
+    monkeypatch.setattr(oraculo_sem_no, "ver_servico", ver_servico_lento)
+    dispositivo = Dispositivo(
+        conta_do_papel("dispositivo"), SERVICO, relogio, 10, BASE, semente=42
+    )
+
+    resultado = oraculo_sem_no.receber(dispositivo.emitir())
+
+    assert resultado.transacao is not None
+    # Com os 50 ms do verServico na conta, nunca ficaria abaixo disso.
+    assert 0 < resultado.transacao.latencia_ms < 50
 
 
 def test_servico_em_andamento_segue_enviando(

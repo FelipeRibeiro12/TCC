@@ -183,10 +183,10 @@ forçar um envio ilegal de propósito.
 | `transacoes.csv` | `ResultadoTransacao` |
 |---|---|
 | `funcao` | `funcao` (`registrarCheckpoint`) |
-| `chamador` | sempre `oraculo` |
+| `chamador` | o papel da `conta_oraculo` da instância: `oraculo`, ou o impostor que o cenário 7 usa para o chamador não autorizado |
 | `gas_usado` | `gas_usado` |
 | `bloco` | `bloco` |
-| `latencia_ms` | `latencia_ms` — tempo real, da entrega da leitura ao recibo, sem o alinhamento do relógio do nó |
+| `latencia_ms` | `latencia_ms` — tempo real, da entrega da leitura ao recibo, sem o alinhamento do relógio do nó nem a leitura única do SLA |
 | `status` | `status` (`ok` ou `revert`) |
 | `erro` | `erro` — só o motivo: texto do `require` (`apenas oraculo`), custom error (`Nome(...)`) ou `panic 0x..` |
 | `timestamp_envio` | `instante_injecao` — relógio virtual |
@@ -217,6 +217,10 @@ produzir, na ordem, para conferir contra `rejeicoes.csv`.
   leitura aceita. Serviço sem periodicidade em cadeia levanta `ServicoSemSla`.
 - **Um executor por repetição.** Ele carrega nonce e relógio; percorrer duas
   vezes levanta `RuntimeError`.
+- **Um `Oraculo` por repetição.** Ele guarda o último nonce de cada
+  dispositivo, e o dispositivo de uma repetição nova volta a contar do 1:
+  reaproveitado, o oráculo rejeitaria toda leitura da segunda repetição em
+  diante como `nonce_repetido`.
 - **Cenário com `varrer`** (o 06) não roda direto: itere `variantes()`.
 - **`margem_seg` do `Oraculo`** (padrão `0`) antecipa o batimento. Com `0`,
   uma leitura rejeitada exatamente no instante do batimento deixa a janela
@@ -289,7 +293,9 @@ gabarito da matriz de confusão, então um rótulo errado não passa.
 ## CSV de rejeições
 
 Gravado por `LogRejeicoes(caminho, experimento, repeticao)`, uma linha por
-leitura recusada. O arquivo é aberto em modo de acréscimo, então as 20
+leitura recusada. Sem `log_rejeicoes`, nada vai para disco, mas toda rejeição
+continua em `oraculo.rejeicoes` (`Rejeicao`: `leitura`,
+`instante_recebimento`, `motivo`). O arquivo é aberto em modo de acréscimo, então as 20
 repetições podem usar o mesmo caminho; o cabeçalho só sai se o arquivo for
 novo.
 

@@ -31,7 +31,7 @@ from web3.exceptions import ContractLogicError, Web3RPCError
 from web3.logs import DISCARD
 
 from oraculo.agregacao import Agregador, Checkpoint, Modo
-from oraculo.assinatura import LeituraAssinada, signatario
+from oraculo.assinatura import Leitura, LeituraAssinada, signatario
 from oraculo.log_rejeicoes import LogRejeicoes
 from oraculo.relogio import RelogioVirtual, sincronizar_no
 
@@ -94,6 +94,13 @@ class Limites:
             raise ValueError(f"limites negativos: {', '.join(negativos)}")
 
 
+@dataclass(frozen=True)
+class Rejeicao:
+    leitura: Leitura
+    instante_recebimento: int  # relógio virtual
+    motivo: Motivo
+
+
 class Validador:
     def __init__(
         self,
@@ -115,12 +122,17 @@ class Validador:
         # aparelho reaproveitado em outro serviço não volta a contar do zero.
         self.ultimo_nonce: dict[str, int] = {}
         self._ultima_aceita: dict[str, LeituraAssinada] = {}
+        # Toda rejeição fica registrada mesmo sem CSV: o log é dado de
+        # resultado, e esquecer o `log` no runner não pode apagá-lo.
+        self.rejeicoes: list[Rejeicao] = []
 
     def validar(self, leitura_assinada: LeituraAssinada) -> Motivo | None:
         agora = self.relogio.agora()
         motivo = self._checar(leitura_assinada, agora)
-        if motivo is not None and self.log is not None:
-            self.log.registrar(leitura_assinada.leitura, agora, motivo)
+        if motivo is not None:
+            self.rejeicoes.append(Rejeicao(leitura_assinada.leitura, agora, motivo))
+            if self.log is not None:
+                self.log.registrar(leitura_assinada.leitura, agora, motivo)
         return motivo
 
     def _checar(self, leitura_assinada: LeituraAssinada, agora: int) -> Motivo | None:
@@ -196,7 +208,9 @@ class ResultadoTransacao:
     status: str  # "ok" ou "revert", o vocabulário do transacoes.csv
     erro: str
     instante_injecao: int  # relógio virtual
-    latencia_ms: float  # tempo real, da injeção até o recibo, sem alinhar o nó
+    # Tempo real, da injeção até o recibo, sem o alinhamento do relógio do nó
+    # nem a leitura do SLA.
+    latencia_ms: float
 
 
 @dataclass(frozen=True)
@@ -268,6 +282,10 @@ class Oraculo:
         self.transacoes: list[ResultadoTransacao] = []
         self.encerrados: set[int] = set()
 
+    @property
+    def rejeicoes(self) -> list[Rejeicao]:
+        return self.validador.rejeicoes
+
     def receber(self, leitura_assinada: LeituraAssinada) -> ResultadoRecebimento:
         inicio_ns = time.perf_counter_ns()
         # Valida mesmo com o serviço encerrado: a rejeição continua sendo dado
@@ -280,7 +298,12 @@ class Oraculo:
             return ResultadoRecebimento(motivo, servico_encerrado=True)
         if motivo is not None:
             return ResultadoRecebimento(motivo)
+        # A leitura do SLA em cadeia só acontece na primeira leitura do
+        # serviço; é preparação, não parte do caminho do evento, e inflaria a
+        # latência do primeiro checkpoint de cada repetição.
+        inicio_sla_ns = time.perf_counter_ns()
         agregador = self._agregador(servico_id)
+        inicio_ns += time.perf_counter_ns() - inicio_sla_ns
         checkpoint = agregador.adicionar(leitura_assinada)
         if checkpoint is None:
             return ResultadoRecebimento(None)
