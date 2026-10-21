@@ -12,17 +12,31 @@ A ordem das checagens é parte da garantia, não detalhe de implementação:
    última leitura aceita;
 4. plausibilidade — faixa física absoluta e taxa de variação.
 
-Só a leitura que passa nas quatro segue para agregação e para a cadeia.
+Só a leitura que passa nas quatro segue para agregação e para a cadeia. O
+`Oraculo` junta as três etapas e é o único que assina transação: a chave do
+dispositivo nunca sai do simulador.
 """
 
+import json
+import re
+import time
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
+from eth_account.signers.local import LocalAccount
 from eth_utils import to_checksum_address
+from web3 import Web3
+from web3.exceptions import ContractLogicError, Web3RPCError
 
+from oraculo.agregacao import Agregador, Checkpoint, Modo
 from oraculo.assinatura import LeituraAssinada, signatario
 from oraculo.log_rejeicoes import LogRejeicoes
-from oraculo.relogio import RelogioVirtual
+from oraculo.relogio import RelogioVirtual, sincronizar_no
+
+# Relativo ao pacote, e não ao cwd: a divisão 3 roda o runner de outro
+# diretório e a ABI publicada pela divisão 1 é a fonte de verdade.
+DIRETORIO_ABI = Path(__file__).resolve().parent.parent / "abi"
 
 
 class Motivo(StrEnum):
@@ -161,3 +175,181 @@ class Validador:
 
         self._ultima_aceita[cadastrado] = leitura_assinada
         return None
+
+
+def carregar_abi(nome: str = "ShipmentEscrow") -> list[dict]:
+    with open(DIRETORIO_ABI / f"{nome}.json", encoding="utf-8") as arquivo:
+        return json.load(arquivo)
+
+
+class ServicoSemSla(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class ResultadoTransacao:
+    funcao: str
+    tx_hash: str | None
+    gas_usado: int | None
+    bloco: int | None
+    status: str  # "ok" ou "revert", o vocabulário do transacoes.csv
+    erro: str
+    instante_injecao: int  # relógio virtual
+    latencia_ms: float  # tempo real, da injeção até o recibo
+
+
+@dataclass(frozen=True)
+class ResultadoRecebimento:
+    motivo: Motivo | None
+    checkpoint: Checkpoint | None = None
+    transacao: ResultadoTransacao | None = None
+
+    @property
+    def aceita(self) -> bool:
+        return self.motivo is None
+
+
+_MOTIVO_REVERT = re.compile(r"reverted with reason string '([^']*)'")
+
+
+def _resumo_revert(mensagem: str) -> str:
+    # Só o texto do require, que é o que a divisão 3 compara; a mensagem
+    # inteira do Hardhat muda de versão para versão.
+    encontrado = _MOTIVO_REVERT.search(mensagem)
+    return encontrado.group(1) if encontrado else mensagem
+
+
+class Oraculo:
+    def __init__(
+        self,
+        w3: Web3,
+        *,
+        conta_oraculo: LocalAccount,
+        endereco_escrow: str,
+        relogio: RelogioVirtual,
+        dispositivos_por_servico: dict[int, str],
+        abi: list[dict] | None = None,
+        log_rejeicoes: LogRejeicoes | None = None,
+        modo_agregacao: Modo | str = Modo.AGREGADO,
+        limites: Limites = Limites(),
+        margem_seg: int = 0,
+        # Limite fixo em vez de estimate_gas: a estimativa reverte antes de a
+        # transação existir, e a rejeição precisa ir para um bloco para que o
+        # gás gasto nela também seja medido (cenário 7).
+        limite_gas: int = 500_000,
+    ) -> None:
+        self.w3 = w3
+        self.conta = conta_oraculo
+        self.relogio = relogio
+        self.escrow = w3.eth.contract(
+            address=to_checksum_address(endereco_escrow),
+            abi=abi if abi is not None else carregar_abi(),
+        )
+        self.validador = Validador(
+            dispositivos_por_servico, relogio, limites, log_rejeicoes
+        )
+        self.modo_agregacao = Modo(modo_agregacao)
+        self.margem_seg = margem_seg
+        self.limite_gas = limite_gas
+        self.chain_id = w3.eth.chain_id
+        self.agregadores: dict[int, Agregador] = {}
+        self.transacoes: list[ResultadoTransacao] = []
+
+    def receber(self, leitura_assinada: LeituraAssinada) -> ResultadoRecebimento:
+        inicio_ns = time.perf_counter_ns()
+        motivo = self.validador.validar(leitura_assinada)
+        if motivo is not None:
+            return ResultadoRecebimento(motivo)
+        agregador = self._agregador(leitura_assinada.leitura.servico_id)
+        checkpoint = agregador.adicionar(leitura_assinada)
+        if checkpoint is None:
+            return ResultadoRecebimento(None)
+        transacao = self._enviar(
+            "registrarCheckpoint", checkpoint.argumentos(), inicio_ns
+        )
+        return ResultadoRecebimento(None, checkpoint, transacao)
+
+    def enviar_checkpoint(self, checkpoint: Checkpoint) -> ResultadoTransacao:
+        return self._enviar(
+            "registrarCheckpoint", checkpoint.argumentos(), time.perf_counter_ns()
+        )
+
+    def ver_servico(self, servico_id: int) -> dict:
+        valores = self.escrow.functions.verServico(servico_id).call()
+        # Nomes tirados da ABI para não depender da ordem dos campos da
+        # struct, que a divisão 1 reordena para empacotar os slots.
+        abi_funcao = next(
+            item for item in self.escrow.abi if item.get("name") == "verServico"
+        )
+        saida = abi_funcao["outputs"][0]
+        return dict(zip((c["name"] for c in saida["components"]), valores))
+
+    def _agregador(self, servico_id: int) -> Agregador:
+        agregador = self.agregadores.get(servico_id)
+        if agregador is not None:
+            return agregador
+        # O SLA vem do contrato, não do roteiro: se a divisão 3 errar a faixa
+        # no cenário, o oráculo continua avaliando pelo que foi contratado.
+        servico = self.ver_servico(servico_id)
+        if servico["periodicidadeSeg"] == 0:
+            raise ServicoSemSla(
+                f"serviço {servico_id} sem periodicidade em cadeia "
+                f"(estado {servico['estado']}); foi aberto?"
+            )
+        agregador = Agregador(
+            servico["tempMin"],
+            servico["tempMax"],
+            servico["periodicidadeSeg"],
+            self.modo_agregacao,
+            self.margem_seg,
+        )
+        self.agregadores[servico_id] = agregador
+        return agregador
+
+    def _enviar(self, funcao: str, argumentos: tuple, inicio_ns: int) -> ResultadoTransacao:
+        instante = self.relogio.agora()
+        sincronizar_no(self.w3, self.relogio)
+        tx_hash: str | None = None
+        recibo = None
+        erro = ""
+        try:
+            tx = getattr(self.escrow.functions, funcao)(*argumentos).build_transaction(
+                {
+                    "from": self.conta.address,
+                    "nonce": self.w3.eth.get_transaction_count(
+                        self.conta.address, "pending"
+                    ),
+                    "gas": self.limite_gas,
+                    "chainId": self.chain_id,
+                }
+            )
+            assinada = self.conta.sign_transaction(tx)
+            tx_hash = self.w3.eth.send_raw_transaction(assinada.raw_transaction).to_0x_hex()
+            recibo = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+        except (Web3RPCError, ContractLogicError) as excecao:
+            # Revert não derruba o experimento. Em automine o Hardhat minera a
+            # transação revertida e devolve o hash no erro; com ele o recibo
+            # dá o gás e o bloco da rejeição.
+            erro = _resumo_revert(str(getattr(excecao, "message", excecao)))
+            resposta = getattr(excecao, "rpc_response", None) or {}
+            dados = (resposta.get("error") or {}).get("data")
+            if isinstance(dados, dict) and dados.get("txHash"):
+                tx_hash = dados["txHash"]
+                recibo = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+        latencia_ms = (time.perf_counter_ns() - inicio_ns) / 1e6
+
+        ok = recibo is not None and recibo["status"] == 1
+        if recibo is not None and not ok and not erro:
+            erro = "revert sem motivo"
+        resultado = ResultadoTransacao(
+            funcao=funcao,
+            tx_hash=tx_hash,
+            gas_usado=recibo["gasUsed"] if recibo is not None else None,
+            bloco=recibo["blockNumber"] if recibo is not None else None,
+            status="ok" if ok else "revert",
+            erro=erro,
+            instante_injecao=instante,
+            latencia_ms=latencia_ms,
+        )
+        self.transacoes.append(resultado)
+        return resultado
