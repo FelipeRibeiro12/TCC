@@ -75,7 +75,7 @@ estar no caminho: rode o runner a partir dela como módulo
 ```python
 from web3 import Web3
 
-from oraculo.cenario import carregar
+from oraculo.cenario import DIRETORIO_CENARIOS, carregar
 from oraculo.contas import conta_do_papel
 from oraculo.executor import Executor
 from oraculo.log_rejeicoes import LogRejeicoes
@@ -83,7 +83,7 @@ from oraculo.oraculo import Oraculo
 from oraculo.relogio import RelogioVirtual, sincronizar_no
 
 w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
-cenario = carregar("oraculo/cenarios/04_lacre_fora_janela.json")
+cenario = carregar(DIRETORIO_CENARIOS / "04_lacre_fora_janela.json")
 
 
 def rodar(cenario, repeticao: int, endereco_escrow: str) -> None:
@@ -143,8 +143,10 @@ def rodar(cenario, repeticao: int, endereco_escrow: str) -> None:
     if final is not None:
         ...  # div. 3: linha em transacoes.csv, como as do loop
 
+    # Com servico_encerrado (lacre fora de janela) o contrato já rescindiu:
+    # não chame confirmarEntrega, que reverteria e sujaria transacoes.csv.
     if servico_id not in oraculo.encerrados:
-        confirmar_entrega(servico_id)  # div. 3; rescindido, reverteria
+        confirmar_entrega(servico_id)  # div. 3
 
 
 for variante in cenario.variantes():  # cenários com "varrer" expandem aqui
@@ -186,7 +188,7 @@ forçar um envio ilegal de propósito.
 | `bloco` | `bloco` |
 | `latencia_ms` | `latencia_ms` — tempo real, da entrega da leitura ao recibo, sem o alinhamento do relógio do nó |
 | `status` | `status` (`ok` ou `revert`) |
-| `erro` | `erro` — só o texto do `require`, ex. `apenas oraculo` |
+| `erro` | `erro` — só o motivo: texto do `require` (`apenas oraculo`), custom error (`Nome(...)`) ou `panic 0x..` |
 | `timestamp_envio` | `instante_injecao` — relógio virtual |
 
 Revert não levanta exceção: volta com `status="revert"` e, como o Hardhat em

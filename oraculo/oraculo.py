@@ -214,13 +214,21 @@ class ResultadoRecebimento:
 
 
 _MOTIVO_REVERT = re.compile(r"reverted with reason string '([^']*)'")
+_ERRO_CUSTOMIZADO = re.compile(r"reverted with custom error '([^']*)'")
+_PANIC = re.compile(r"reverted with panic code (0x[0-9a-fA-F]+)")
 
 
 def _resumo_revert(mensagem: str) -> str:
-    # Só o texto do require, que é o que a divisão 3 compara; a mensagem
-    # inteira do Hardhat muda de versão para versão.
-    encontrado = _MOTIVO_REVERT.search(mensagem)
-    return encontrado.group(1) if encontrado else mensagem
+    # Só o motivo, que é o que a divisão 3 compara; a mensagem inteira do
+    # Hardhat muda de versão para versão. Os três formatos cobrem require com
+    # texto, custom error (se a div. 1 trocar os require) e panic.
+    if encontrado := _MOTIVO_REVERT.search(mensagem):
+        return encontrado.group(1)
+    if encontrado := _ERRO_CUSTOMIZADO.search(mensagem):
+        return encontrado.group(1)
+    if encontrado := _PANIC.search(mensagem):
+        return f"panic {encontrado.group(1)}"
+    return mensagem
 
 
 class Oraculo:

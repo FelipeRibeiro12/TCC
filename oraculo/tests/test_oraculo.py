@@ -30,6 +30,26 @@ def test_resumo_revert_extrai_o_motivo_do_require() -> None:
     assert _resumo_revert(mensagem) == "apenas oraculo"
 
 
+def test_resumo_revert_extrai_o_custom_error() -> None:
+    mensagem = (
+        "Error: VM Exception while processing transaction: "
+        "reverted with custom error 'ChamadorNaoAutorizado(\"0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65\")'"
+    )
+    assert (
+        _resumo_revert(mensagem)
+        == 'ChamadorNaoAutorizado("0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65")'
+    )
+
+
+def test_resumo_revert_extrai_o_panic() -> None:
+    mensagem = (
+        "Error: VM Exception while processing transaction: "
+        "reverted with panic code 0x11 (Arithmetic operation overflowed "
+        "outside of an unchecked block)"
+    )
+    assert _resumo_revert(mensagem) == "panic 0x11"
+
+
 def test_resumo_revert_sem_motivo_mantem_a_mensagem() -> None:
     assert _resumo_revert("nonce too low") == "nonce too low"
 
