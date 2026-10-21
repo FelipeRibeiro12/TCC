@@ -4,6 +4,8 @@ from eth_utils import keccak
 
 from oraculo.agregacao import Agregador, Checkpoint, Disparo, Modo, hash_lote
 from oraculo.assinatura import Leitura, LeituraAssinada, assinar, hash_leitura
+from oraculo.cenario import DIRETORIO_CENARIOS, carregar
+from oraculo.executor import Executor
 from oraculo.oraculo import Validador
 from oraculo.relogio import RelogioVirtual
 from oraculo.simulador import Base, Dispositivo
@@ -257,6 +259,71 @@ def test_argumentos_na_ordem_de_registrar_checkpoint(
     cp = agregador.adicionar(leitura(contas, 1, 0, temperatura=33, umidade=70))
     assert cp is not None
     assert cp.argumentos() == (SERVICO, cp.hash_leitura, 33, 70, False, 0)
+
+
+# --- fim da rodada ----------------------------------------------------------
+
+
+def test_descarregar_ancora_o_fim_do_cenario_conforme(
+    contas: dict[str, LocalAccount], relogio: RelogioVirtual
+) -> None:
+    c = carregar(DIRETORIO_CENARIOS / "01_conforme.json")
+    servico = c.servico
+    agregador = Agregador(
+        servico.temp_min, servico.temp_max, servico.periodicidade_seg
+    )
+    t0 = relogio.agora()
+    for emissao in Executor(c, contas["dispositivo"], SERVICO, relogio):
+        agregador.adicionar(emissao.leitura)
+    assert agregador.checkpoints[-1].timestamp_leitura == t0 + 540
+
+    final = agregador.descarregar()
+    assert final is not None
+    assert final.disparo is Disparo.FINAL
+    assert final.timestamp_leitura == t0 + 590
+    assert [item.leitura.timestamp - t0 for item in final.lote] == [
+        550, 560, 570, 580, 590
+    ]
+    assert agregador.checkpoints[-1] is final
+
+
+def test_descarregar_duas_vezes_a_segunda_e_none(
+    contas: dict[str, LocalAccount], agregador: Agregador
+) -> None:
+    alimentar(agregador, serie(contas, [{}] * 3))
+    assert agregador.descarregar() is not None
+    assert agregador.descarregar() is None
+
+
+def test_descarregar_sem_leitura_e_none(agregador: Agregador) -> None:
+    assert agregador.descarregar() is None
+
+
+def test_hash_do_checkpoint_final_reproduzivel(
+    contas: dict[str, LocalAccount], agregador: Agregador
+) -> None:
+    leituras = serie(contas, [{}] * 9)
+    cps = alimentar(agregador, leituras)
+    final = agregador.descarregar()
+    assert final is not None
+    # Com o final, os lotes cobrem todas as leituras, sem sobra.
+    assert [item for cp in [*cps, final] for item in cp.lote] == leituras
+    assert final.hash_leitura == hash_lote(final.lote)
+
+
+def test_checkpoint_final_leva_o_pior_da_janela(
+    contas: dict[str, LocalAccount], agregador: Agregador
+) -> None:
+    alimentar(agregador, serie(contas, [{"temperatura": t} for t in [50, 50, 30, 75, 50]]))
+    final = agregador.descarregar()
+    assert final is not None
+    assert final.temperatura == 75
+
+
+def test_modo_bruto_nao_tem_o_que_descarregar(contas: dict[str, LocalAccount]) -> None:
+    agregador = Agregador(TEMP_MIN, TEMP_MAX, PERIODICIDADE, modo="bruto")
+    alimentar(agregador, serie(contas, [{}] * 5))
+    assert agregador.descarregar() is None
 
 
 # --- modo bruto -------------------------------------------------------------

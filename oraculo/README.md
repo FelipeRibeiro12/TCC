@@ -132,6 +132,12 @@ def rodar(cenario, repeticao: int, endereco_escrow: str) -> None:
         elif resultado.transacao is not None:
             ...  # div. 3: linha em transacoes.csv (ver abaixo)
 
+    # Manda o que ficou no lote depois do último checkpoint; sem isso, o fim
+    # da viagem não chega à cadeia. Devolve None se não havia nada pendente.
+    final = oraculo.encerrar(servico_id)
+    if final is not None:
+        ...  # div. 3: linha em transacoes.csv, como as do loop
+
     confirmar_entrega(servico_id)  # div. 3
 
 
@@ -170,7 +176,7 @@ automine minera a transação revertida, com gás e bloco preenchidos. Todas as
 transações da instância também ficam em `oraculo.transacoes`.
 
 O `Checkpoint` traz `disparo` (`primeira`, `faixa`, `lacre`, `batimento`,
-`bruto`) e `lote`, as leituras assinadas que o `hash_leitura` resume — é com
+`bruto`, `final` — este último do `encerrar`) e `lote`, as leituras assinadas que o `hash_leitura` resume — é com
 ele que se confere fora da cadeia o que foi agregado.
 
 ### Ligar emissão ao rótulo esperado

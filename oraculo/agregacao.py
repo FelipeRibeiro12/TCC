@@ -32,6 +32,7 @@ class Disparo(StrEnum):
     LACRE = "lacre"
     BATIMENTO = "batimento"
     BRUTO = "bruto"
+    FINAL = "final"
 
 
 class Condicao(IntEnum):
@@ -123,6 +124,14 @@ class Agregador:
         if disparo is None:
             return None
         return self._fechar(leitura_assinada, disparo)
+
+    # Sem isso, as leituras depois do último checkpoint nunca seriam
+    # ancoradas: o hash delas ficaria fora da cadeia e o pior valor do fim da
+    # viagem não chegaria ao contrato.
+    def descarregar(self) -> Checkpoint | None:
+        if not self._pendentes:
+            return None
+        return self._fechar(self._pendentes[-1], Disparo.FINAL)
 
     def _disparo(
         self, atual: LeituraAssinada, anterior: LeituraAssinada | None

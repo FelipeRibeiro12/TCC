@@ -274,6 +274,17 @@ class Oraculo:
             "registrarCheckpoint", checkpoint.argumentos(), time.perf_counter_ns()
         )
 
+    # O runner chama no fim da rodada, antes de `confirmarEntrega`: o que
+    # ficou no lote depois do último checkpoint ainda precisa ir para a cadeia.
+    def encerrar(self, servico_id: int) -> ResultadoTransacao | None:
+        agregador = self.agregadores.get(servico_id)
+        if agregador is None:
+            return None
+        checkpoint = agregador.descarregar()
+        if checkpoint is None:
+            return None
+        return self.enviar_checkpoint(checkpoint)
+
     def ver_servico(self, servico_id: int) -> dict:
         valores = self.escrow.functions.verServico(servico_id).call()
         # Nomes tirados da ABI para não depender da ordem dos campos da

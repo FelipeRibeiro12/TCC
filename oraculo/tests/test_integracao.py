@@ -5,7 +5,7 @@ import pytest
 from eth_account.signers.local import LocalAccount
 from web3 import Web3
 
-from oraculo.agregacao import Agregador
+from oraculo.agregacao import Agregador, Disparo
 from oraculo.contas import conta_do_papel
 from oraculo.oraculo import Motivo, Oraculo, ServicoSemSla, carregar_abi
 from oraculo.relogio import INICIO_PADRAO, RelogioVirtual
@@ -217,3 +217,34 @@ def test_receber_leitura_valida_registra_checkpoint(w3, escrow, relogio):
     assert resultado.aceita
     assert resultado.transacao.status == "ok"
     assert oraculo.agregadores[servico].periodicidade_seg == 60
+
+
+def test_encerrar_envia_o_lote_pendente(w3, escrow, relogio):
+    oraculo = _oraculo(w3, escrow, relogio, conta_do_papel("oraculo"))
+    # SLA fixo no agregador, como em _checkpoint: o esqueleto não abre serviço.
+    oraculo.agregadores[SERVICO] = Agregador(20, 80, 60)
+    dispositivo = Dispositivo(
+        conta_do_papel("dispositivo"), SERVICO, relogio, 10, BASE, semente=42
+    )
+    for _ in range(4):
+        oraculo.receber(dispositivo.emitir())
+        relogio.avancar(10)
+    # Só a primeira leitura disparou; as outras três esperam no lote.
+    assert len(oraculo.transacoes) == 1
+
+    resultado = oraculo.encerrar(SERVICO)
+
+    assert resultado is not None
+    assert resultado.status == "ok"
+    assert oraculo.transacoes[-1] == resultado
+    final = oraculo.agregadores[SERVICO].checkpoints[-1]
+    assert final.disparo is Disparo.FINAL
+    assert len(final.lote) == 3
+    assert oraculo.encerrar(SERVICO) is None
+    assert len(oraculo.transacoes) == 2
+
+
+def test_encerrar_servico_sem_leitura_aceita_nao_envia(w3, escrow, relogio):
+    oraculo = _oraculo(w3, escrow, relogio, conta_do_papel("oraculo"))
+    assert oraculo.encerrar(SERVICO) is None
+    assert oraculo.transacoes == []
