@@ -4,9 +4,10 @@ import * as path from "path";
 
 const CONTRACT_NAMES = ["AssetTwin", "ShipmentEscrow"];
 
-async function main() {
-  // parte de paths.root e não do cwd, para funcionar de qualquer pasta
-  const abiDir = path.resolve(config.paths.root, "..", "abi");
+// parte de paths.root e não do cwd, para funcionar de qualquer pasta
+export const abiDir = path.resolve(config.paths.root, "..", "abi");
+
+export async function exportAbi() {
   fs.mkdirSync(abiDir, { recursive: true });
 
   for (const name of CONTRACT_NAMES) {
@@ -19,7 +20,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+// o deploy importa este arquivo, e sem essa checagem a exportação rodaria duas vezes
+if (require.main === module) {
+  exportAbi().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
