@@ -225,4 +225,3 @@ artifacts/
 cache/
 typechain-types/
 abi/enderecos.json
-experimentos/resultados/*.csv
