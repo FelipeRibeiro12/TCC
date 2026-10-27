@@ -1,0 +1,9 @@
+experimento,repeticao,funcao,chamador,gas_usado,bloco,latencia_ms,status,erro,timestamp_envio,rede
+01_conforme,1,deploy:AssetTwin,dono,1197624,5,20.053,ok,,2026-10-26T21:52:59.672265+00:00,hardhat-local
+01_conforme,1,deploy:ShipmentEscrow,dono,423272,6,15.902,ok,,2026-10-26T21:52:59.696294+00:00,hardhat-local
+01_conforme,1,criarTwin,dono,120404,7,17.729,ok,,2026-10-26T21:52:59.704441+00:00,hardhat-local
+01_conforme,1,abrirServico,contratante,24810,8,22.993,ok,,2026-10-26T21:52:59.748469+00:00,hardhat-local
+01_conforme,1,deploy:AssetTwin,dono,1197624,9,15.970,ok,,2026-10-26T21:53:13.417180+00:00,hardhat-local
+01_conforme,1,deploy:ShipmentEscrow,dono,423272,10,13.947,ok,,2026-10-26T21:53:13.433153+00:00,hardhat-local
+01_conforme,1,criarTwin,dono,120404,11,16.228,ok,,2026-10-26T21:53:13.449284+00:00,hardhat-local
+01_conforme,1,abrirServico,contratante,24810,12,17.281,ok,,2026-10-26T21:53:13.480793+00:00,hardhat-local
